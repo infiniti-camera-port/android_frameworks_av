@@ -31,9 +31,8 @@ using ::android::companion::virtualcamera::VirtualCameraProvider;
 using ::android::companion::virtualcamera::VirtualCameraService;
 
 namespace {
-// Multiple virtual cameras can be created and closed rapidly when recreating a VirtualDevice.
-// The Binder Thread pool should be large enough to handle this.
-const int HWBINDER_THREAD_COUNT = 16;
+// Default recommended RPC thread count for camera provider implementations
+const int HWBINDER_THREAD_COUNT = 6;
 
 constexpr char kVirtualCameraServiceName[] = "virtual_camera";
 }  // namespace
