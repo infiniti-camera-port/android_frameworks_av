@@ -7,6 +7,7 @@ namespace android {
 void* CameraServiceExtFactory::sFunctionTable = nullptr;
 void* CameraServiceExtFactory::sExtObject = nullptr;
 int (*CameraServiceExtFactory::sOnTransactFunc)(void*, uint32_t, const Parcel&, Parcel*, uint32_t) = nullptr;
+void* CameraServiceExtFactory::sBeforeMetadataSendToAppFn = nullptr;
 
 void CameraServiceExtFactory::ensureLoaded() {
     if (sFunctionTable != nullptr) return;
@@ -63,6 +64,16 @@ void CameraServiceExtFactory::ensureLoaded() {
     } else {
         ALOGI("CameraServiceExtFactory: onTransact found at %p", sOnTransactFunc);
     }
+
+    // R5 Depth-2 result hook (night-preview fix). Resolved raw; the caller casts to the typed
+    // signature: void(this, CaptureResult*, uint32_t, CaptureOutputStates&).
+    sBeforeMetadataSendToAppFn = dlsym(handle,
+        "_ZN7android20CameraServiceExtImpl23beforeMetadataSendToAppEPNS_13CaptureResultEjRNS_7camera319CaptureOutputStatesE");
+    if (sBeforeMetadataSendToAppFn == nullptr) {
+        ALOGE("CameraServiceExtFactory: dlsym beforeMetadataSendToApp failed: %s", dlerror());
+    } else {
+        ALOGI("CameraServiceExtFactory: beforeMetadataSendToApp found at %p", sBeforeMetadataSendToAppFn);
+    }
 }
 
 void* CameraServiceExtFactory::getInstance() {
@@ -93,6 +104,41 @@ int CameraServiceExtFactory::onTransact(uint32_t code, const Parcel& data, Parce
         return -1;
     }
     return sOnTransactFunc(sExtObject, code, data, reply, flags);
+}
+
+bool CameraServiceExtFactory::isLoaded() {
+    ensureLoaded();
+    return sFunctionTable != nullptr;
+}
+
+void* CameraServiceExtFactory::extObject() {
+    return getExtObject();
+}
+
+void* CameraServiceExtFactory::beforeMetadataSendToAppFn() {
+    ensureLoaded();
+    return sBeforeMetadataSendToAppFn;
+}
+
+// Resolves + caches the real CameraServiceExtImpl* (the member-fn `this`) via the same
+// factory-call mechanism onTransact uses. Returns the cached object once resolved.
+void* CameraServiceExtFactory::getExtObject() {
+    ensureLoaded();
+    if (sExtObject != nullptr) return sExtObject;
+    if (sFunctionTable == nullptr) {
+        ALOGE("CameraServiceExtFactory::getExtObject: extension not loaded");
+        return nullptr;
+    }
+    void* actualFunc = *(void**)sFunctionTable;
+    if (actualFunc == nullptr) return nullptr;
+    typedef void* (*GetObjectFunc)();
+    sExtObject = ((GetObjectFunc)actualFunc)();
+    if (sExtObject == nullptr) {
+        ALOGE("CameraServiceExtFactory::getExtObject: factory returned null");
+        return nullptr;
+    }
+    ALOGI("CameraServiceExtFactory: real extension object at %p", sExtObject);
+    return sExtObject;
 }
 
 CameraServiceExtFactory::~CameraServiceExtFactory() {

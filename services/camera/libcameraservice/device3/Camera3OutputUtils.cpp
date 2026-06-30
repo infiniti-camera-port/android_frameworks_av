@@ -50,6 +50,7 @@
 #include <com_android_internal_camera_flags.h>
 
 #include "device3/Camera3OutputUtils.h"
+#include "ext/include/CameraServiceExtFactory.h"
 #include "utils/SessionConfigurationUtils.h"
 
 #include "system/camera_metadata.h"
@@ -239,6 +240,21 @@ void insertResultLocked(CaptureOutputStates& states, CaptureResult *result, uint
         set_camera_metadata_vendor_id(pmeta, states.vendorTagId);
         correctMeteringRegions(pmeta);
         metadata.unlock(pmeta);
+    }
+
+    // R5 (night-preview fix): OEM CameraServiceExt Depth-2 result hook, behind the ext-LOADED gate
+    // ONLY. beforeMetadataSendToApp lets the OEM ext stamp the night preview-RESULT metadata that the
+    // APS night preview-decision path consumes; unwired, camApsPreviewDecision starves (init:-1 ->
+    // decision cameraId -1 -> OCAM_NightMode rejects forever -> night-preview freeze). Unlike the
+    // reverted R4 configure hooks, this path has no op_mode echo, so no clobber trap. result /
+    // frameNumber / states are in-scope locals matching the OEM member-fn signature exactly.
+    if (CameraServiceExtFactory::isLoaded()) {
+        void* ext = CameraServiceExtFactory::extObject();
+        void* beforeMetaRaw = CameraServiceExtFactory::beforeMetadataSendToAppFn();
+        if (ext != nullptr && beforeMetaRaw != nullptr) {
+            using BeforeMetaFn = void (*)(void*, CaptureResult*, uint32_t, CaptureOutputStates&);
+            reinterpret_cast<BeforeMetaFn>(beforeMetaRaw)(ext, result, frameNumber, states);
+        }
     }
 
     // Valid result, insert into queue
