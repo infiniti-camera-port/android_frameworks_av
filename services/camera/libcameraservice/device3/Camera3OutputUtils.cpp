@@ -248,12 +248,20 @@ void insertResultLocked(CaptureOutputStates& states, CaptureResult *result, uint
     // decision cameraId -1 -> OCAM_NightMode rejects forever -> night-preview freeze). Unlike the
     // reverted R4 configure hooks, this path has no op_mode echo, so no clobber trap. result /
     // frameNumber / states are in-scope locals matching the OEM member-fn signature exactly.
-    if (CameraServiceExtFactory::isLoaded()) {
-        void* ext = CameraServiceExtFactory::extObject();
-        void* beforeMetaRaw = CameraServiceExtFactory::beforeMetadataSendToAppFn();
-        if (ext != nullptr && beforeMetaRaw != nullptr) {
+    {
+        bool extLoaded = CameraServiceExtFactory::isLoaded();
+        void* ext = extLoaded ? CameraServiceExtFactory::extObject() : nullptr;
+        void* beforeMetaRaw = extLoaded ? CameraServiceExtFactory::beforeMetadataSendToAppFn() : nullptr;
+        if (extLoaded && ext != nullptr && beforeMetaRaw != nullptr) {
             using BeforeMetaFn = void (*)(void*, CaptureResult*, uint32_t, CaptureOutputStates&);
             reinterpret_cast<BeforeMetaFn>(beforeMetaRaw)(ext, result, frameNumber, states);
+            if ((frameNumber % 60) == 0) {
+                ALOGE("NIGHTFIX1: beforeMetadataSendToApp CALLED frame=%u ext=%p fn=%p",
+                        frameNumber, ext, beforeMetaRaw);
+            }
+        } else if ((frameNumber % 60) == 0) {
+            ALOGE("NIGHTFIX1: hook SKIPPED frame=%u loaded=%d ext=%p fn=%p",
+                    frameNumber, extLoaded, ext, beforeMetaRaw);
         }
     }
 
