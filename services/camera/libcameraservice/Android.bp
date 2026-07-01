@@ -256,6 +256,10 @@ cc_library {
         "-Wextra",
         "-Werror",
         "-Wno-ignored-qualifiers",
+        // v3.2: bypass the decreasing-HAL-timestamp buffer error (realahnet 8ce4c0f).
+        // Defined unconditionally for now instead of a soong_config_variable("cameraservice",
+        // "allow_nonincreasing_timestamps") select; swap to a select when the config is wired.
+        "-DALLOW_NONINCREASING_TIMESTAMPS",
     ] + select(soong_config_variable("camera", "package_name"), {
         any @ flag_val: ["-DCAMERA_PACKAGE_NAME=\"" + flag_val + "\""],
         default: [],
